@@ -3,8 +3,9 @@ name: firecrawl
 x-common-service: &common-service
   # NOTE: If you don't want to build the service locally,
   # comment out the build: statement and uncomment the image: statement
-  # image: ghcr.io/firecrawl/firecrawl
-  build: apps/api
+  image: ghcr.io/firecrawl/firecrawl:latest
+  # build: apps/api
+  restart: unless-stopped
 
   ulimits:
     nofile:
@@ -63,8 +64,9 @@ services:
   playwright-service:
     # NOTE: If you don't want to build the service locally,
     # comment out the build: statement and uncomment the image: statement
-    # image: ghcr.io/firecrawl/playwright-service:latest
-    build: apps/playwright-service-ts
+    image: ghcr.io/firecrawl/playwright-service:latest
+    # build: apps/playwright-service-ts
+    restart: unless-stopped
     environment:
       PORT: 3000
       PROXY_SERVER: ${PROXY_SERVER}
@@ -99,6 +101,7 @@ services:
       WORKER_PORT: ${WORKER_PORT:-3005}
       NUQ_RABBITMQ_URL: amqp://rabbitmq:5672
       HARNESS_STARTUP_TIMEOUT_MS: ${HARNESS_STARTUP_TIMEOUT_MS:-60000}
+      NODE_OPTIONS: --require=/app/selfcrawl-model-limits.cjs
       ENV: local
     depends_on:
       redis:
@@ -111,6 +114,7 @@ services:
       - "${PORT:-3002}:${INTERNAL_PORT:-3002}"
     volumes:
       - fdb-cluster-file:/var/fdb:ro
+      - ../firecrawl-model-limits.cjs:/app/selfcrawl-model-limits.cjs:ro,Z
     command: node dist/src/harness.js --start-docker
     # Resource limits for Docker Compose (not Swarm)
     # Increase if you have more CPU cores/RAM available
@@ -124,6 +128,7 @@ services:
     # Using Valkey with Firecrawl is untested and not guaranteed to work. Use with caution.
     image: redis:alpine
     # image: valkey/valkey:alpine
+    restart: unless-stopped
 
     networks:
       - backend
@@ -137,8 +142,14 @@ services:
 
   rabbitmq:
     image: rabbitmq:3-management
+    restart: unless-stopped
+    user: "999:999"
     networks:
       - backend
+    environment:
+      RABBITMQ_ERLANG_COOKIE: ${RABBITMQ_ERLANG_COOKIE:-firecrawlLocalRabbitCookie20260704}
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
     command: rabbitmq-server
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
@@ -156,8 +167,9 @@ services:
   nuq-postgres:
     # NOTE: If you don't want to build the image locally,
     # comment out the build: statement and uncomment the image: statement
-    # image: ghcr.io/firecrawl/nuq-postgres:latest
-    build: apps/nuq-postgres
+    image: ghcr.io/firecrawl/nuq-postgres:latest
+    # build: apps/nuq-postgres
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
@@ -176,6 +188,7 @@ services:
   # fdb-cluster-file volume. Replaces nuq-postgres once stable.
   foundationdb:
     image: foundationdb/foundationdb:7.3.63
+    restart: unless-stopped
     environment:
       FDB_NETWORKING_MODE: container
       FDB_COORDINATOR_PORT: 4500
@@ -199,7 +212,7 @@ services:
     entrypoint:
       - /bin/bash
       - -c
-      - "sleep 5 && out=$(fdbcli -C /var/fdb/fdb.cluster --exec 'configure new single ssd' 2>&1); status=$$?; printf '%s\n' \"$$out\"; if [ \"$$status\" -eq 0 ]; then exit 0; fi; printf '%s\n' \"$$out\" | grep -Eiq 'already.*configured|database.*configured'"
+      - "sleep 5 && out=$(fdbcli -C /var/fdb/fdb.cluster --exec 'configure new single ssd' 2>&1); status=$$?; printf '%s\n' \"$$out\"; if [ \"$$status\" -eq 0 ]; then exit 0; fi; printf '%s\n' \"$$out\" | grep -Eiq 'already.*configured|database.*configured|database already exists'"
     volumes:
       - fdb-cluster-file:/var/fdb
     networks:
@@ -213,3 +226,4 @@ networks:
 volumes:
   fdb-data:
   fdb-cluster-file:
+  rabbitmq-data:
