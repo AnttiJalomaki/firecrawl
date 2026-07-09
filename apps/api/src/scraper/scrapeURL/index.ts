@@ -224,12 +224,6 @@ function buildFeatureFlags(
     flags.add("stealthProxy");
   }
 
-  // Menu modifier capture replays per-item endpoints inside the page session; the supported
-  // store pages bot-wall the load without stealth, so force it on.
-  if (hasFormatOfType(options.formats, "menu")?.modifiers) {
-    flags.add("stealthProxy");
-  }
-
   const urlO = new URL(url);
   const lowerPath = urlO.pathname.toLowerCase();
 
@@ -992,6 +986,9 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
       screenshot: engineResult.screenshot,
       actions: engineResult.actions,
       branding: engineResult.branding,
+      ...(engineResult.menuModifiers
+        ? { menuModifiers: engineResult.menuModifiers }
+        : {}),
       metadata: {
         sourceURL: meta.internalOptions.unnormalizedSourceURL ?? meta.url,
         url: engineResult.url,
