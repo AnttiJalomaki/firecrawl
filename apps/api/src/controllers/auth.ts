@@ -6,10 +6,9 @@ import { logger } from "../lib/logger";
 import { parseApi } from "../lib/parseApi";
 import { withAuth } from "../lib/withAuth";
 import { getAgentSponsorStatus } from "../services/agent-sponsor";
-import { getRedisConnection } from "../services/queue-service";
-import { getRateLimiter } from "../services/rate-limiter";
+import { getRateLimiter, getAutumnRateLimiter } from "../services/rate-limiter";
 import {
-  KEYLESS_CREDITS_MESSAGE,
+  KEYLESS_FREE_TIER_LIMIT_MESSAGE,
   consumeKeylessRequest,
   isKeylessConfigured,
   isKeylessIpEligible,
@@ -20,9 +19,7 @@ import { checkIpRestriction } from "../lib/ip-restriction";
 import { checkKeyEndpointRestriction } from "../lib/key-restriction";
 import { deleteKey, getValue, setValue } from "../services/redis";
 import { redlock } from "../services/redlock";
-import { eq } from "drizzle-orm";
 import { db, dbRr } from "../db/connection";
-import * as schema from "../db/schema";
 import {
   authCreditUsageChunk,
   authCreditUsageChunkFromTeam,
@@ -30,13 +27,14 @@ import {
 } from "../db/rpc";
 import { AuthResponse, RateLimiterMode } from "../types";
 import { AuthCreditUsageChunk, AuthCreditUsageChunkFromTeam } from "./v1/types";
+import { autumnService } from "../services/autumn/autumn.service";
 
 function normalizedApiIsUuid(potentialUuid: string): boolean {
   // Check if the string is a valid UUID
   return isValidUuid(potentialUuid);
 }
 
-export async function setCachedACUC(
+async function setCachedACUC(
   api_key: string,
   is_extract: boolean,
   acuc:
@@ -80,11 +78,7 @@ const mockPreviewACUC: (
   api_key: "preview",
   api_key_id: 0,
   team_id,
-  sub_id: null,
-  sub_current_period_start: null,
-  sub_current_period_end: null,
-  sub_user_id: null,
-  price_id: null,
+  org_id: "preview",
   rate_limits: {
     crawl: 2,
     scrape: 10,
@@ -97,14 +91,6 @@ const mockPreviewACUC: (
     extractAgentPreview: 1,
     scrapeAgentPreview: 5,
   },
-  price_credits: 99999999,
-  price_should_be_graceful: false,
-  price_associated_auto_recharge_price_id: null,
-  credits_used: 0,
-  coupon_credits: 99999999,
-  adjusted_credits_used: 0,
-  remaining_credits: 99999999,
-  total_credits_sum: 99999999,
   plan_priority: {
     bucketLimit: 25,
     planModifier: 0.1,
@@ -118,13 +104,7 @@ const mockACUC: () => AuthCreditUsageChunk = () => ({
   api_key: "bypass",
   api_key_id: 0,
   team_id: "bypass",
-  sub_id: "bypass",
-  sub_current_period_start: new Date().toISOString(),
-  sub_current_period_end: new Date(
-    new Date().getTime() + 30 * 24 * 60 * 60 * 1000,
-  ).toISOString(),
-  sub_user_id: "bypass",
-  price_id: "bypass",
+  org_id: "bypass",
   rate_limits: {
     crawl: 99999999,
     scrape: 99999999,
@@ -137,14 +117,6 @@ const mockACUC: () => AuthCreditUsageChunk = () => ({
     extractAgentPreview: 99999999,
     scrapeAgentPreview: 99999999,
   },
-  price_credits: 99999999,
-  price_should_be_graceful: false,
-  price_associated_auto_recharge_price_id: null,
-  credits_used: 0,
-  coupon_credits: 99999999,
-  adjusted_credits_used: 0,
-  remaining_credits: 99999999,
-  total_credits_sum: 99999999,
   plan_priority: {
     bucketLimit: 25,
     planModifier: 0.1,
@@ -243,8 +215,7 @@ async function resolveOAuthToken(
   }
 }
 
-/** @public used by auto_charge.ts (disabled, Autumn handles auto-recharge) */
-export async function getACUC(
+async function getACUC(
   api_key: string,
   cacheOnly = false,
   useCache = true,
@@ -325,7 +296,7 @@ export async function getACUC(
   }
 }
 
-export async function setCachedACUCTeam(
+async function setCachedACUCTeam(
   team_id: string,
   is_extract: boolean,
   acuc:
@@ -467,14 +438,12 @@ export async function clearACUCTeam(team_id: string): Promise<void> {
 
   // Also clear the base cache key
   await deleteKey(`acuc_team_${team_id}`);
-
-  // Add team to billed_teams set so tally gets updated too
-  await getRedisConnection().sadd("billed_teams", team_id);
 }
 
-const KEYLESS_REQUESTS_MESSAGE = `You've reached today's limit of free, unauthenticated requests to Firecrawl. Sign up for a free API key at https://firecrawl.dev for 1000 more credits and higher rate limits for free. (If you're an agent, you can also use https://firecrawl.dev/auth.md)`;
+const KEYLESS_ENDPOINT_NOT_AVAILABLE_MESSAGE = `This endpoint is not supported by the keyless free tier. Sign up for a free API key at https://www.firecrawl.dev/signin for more endpoints, more usage, and higher rate limits.
 
-const KEYLESS_ENDPOINT_NOT_AVAILABLE_MESSAGE = `This endpoint is not available without an API key. Sign up for a free API key at https://firecrawl.dev for 1000 more credits and higher rate limits for free. (If you're an agent, you can also use https://firecrawl.dev/auth.md)`;
+Then authenticate with:
+Authorization: Bearer YOUR_API_KEY`;
 
 const KEYLESS_SUSPICIOUS_IP_MESSAGE = `Unfortunately, your IP address looks suspicious, so Firecrawl can't be used without an API key from here. Sign up for a free API key at https://firecrawl.dev for 1000 credits and higher rate limits for free. (If you're an agent, you can also use https://firecrawl.dev/auth.md)`;
 
@@ -487,7 +456,7 @@ const KEYLESS_SUSPICIOUS_IP_MESSAGE = `Unfortunately, your IP address looks susp
  */
 async function handleKeylessAuth(
   req,
-  mode: RateLimiterMode | undefined,
+  mode: RateLimiterMode,
   allowKeyless: boolean | undefined,
 ): Promise<AuthResponse> {
   const unauthorized: AuthResponse = {
@@ -604,10 +573,7 @@ async function handleKeylessAuth(
     });
     return {
       success: false,
-      error:
-        result.reason === "credits"
-          ? KEYLESS_CREDITS_MESSAGE
-          : KEYLESS_REQUESTS_MESSAGE,
+      error: KEYLESS_FREE_TIER_LIMIT_MESSAGE,
       status: 429,
       // Out of free quota — emit the OAuth-discovery header so agents can find
       // the key/signup flow at the moment they actually need a key.
@@ -632,7 +598,7 @@ async function handleKeylessAuth(
 export async function authenticateUser(
   req,
   res,
-  mode?: RateLimiterMode,
+  mode: RateLimiterMode,
   options?: { allowKeyless?: boolean },
 ): Promise<AuthResponse> {
   const bypassChunk = mockACUC();
@@ -650,47 +616,23 @@ export async function authenticateUser(
 }
 
 /**
- * Backfills org_id for stale cached auth chunks so Autumn check gating can run.
+ * Builds the rate limiter for an authenticated team from its Autumn rate-limit
+ * multiplier. Shared by the OAuth and API-key paths so their limiter setup
+ * can't diverge.
  */
-async function ensureChunkOrgId(
-  apiKey: string,
-  chunk: AuthCreditUsageChunk | null,
-): Promise<AuthCreditUsageChunk | null> {
-  if (!chunk || chunk.org_id || config.USE_DB_AUTHENTICATION !== true) {
-    return chunk;
-  }
-
-  let data: { org_id: string | null } | undefined;
-  try {
-    [data] = await dbRr
-      .select({ org_id: schema.teams.org_id })
-      .from(schema.teams)
-      .where(eq(schema.teams.id, chunk.team_id))
-      .limit(1);
-  } catch (error) {
-    logger.warn("Failed to backfill org_id for auth chunk", {
-      teamId: chunk.team_id,
-      error,
-    });
-    return chunk;
-  }
-
-  if (!data?.org_id) {
-    logger.warn("Failed to backfill org_id for auth chunk", {
-      teamId: chunk.team_id,
-    });
-    return chunk;
-  }
-
-  chunk.org_id = data.org_id;
-  await setCachedACUC(apiKey, !!chunk.is_extract, chunk);
-  return chunk;
+async function buildAuthenticatedRateLimiter(
+  teamId: string,
+  orgId: string | null | undefined,
+  mode: RateLimiterMode,
+): Promise<RateLimiterRedis> {
+  const multiplier = await autumnService.getRateLimitMultiplier(teamId, orgId);
+  return getAutumnRateLimiter(mode, multiplier);
 }
 
 async function supaAuthenticateUser(
   req,
   res,
-  mode?: RateLimiterMode,
+  mode: RateLimiterMode,
   options?: { allowKeyless?: boolean },
 ): Promise<AuthResponse> {
   const authHeader =
@@ -720,7 +662,6 @@ async function supaAuthenticateUser(
   let normalizedApi: string;
 
   let teamId: string | null = null;
-  let priceId: string | null = null;
   let chunk: AuthCreditUsageChunk | null = null;
   if (token == "this_is_just_a_preview_token") {
     throw new Error(
@@ -729,11 +670,11 @@ async function supaAuthenticateUser(
   }
   if (token == config.PREVIEW_TOKEN) {
     if (mode == RateLimiterMode.CrawlStatus) {
-      rateLimiter = getRateLimiter(RateLimiterMode.CrawlStatus, token);
+      rateLimiter = getRateLimiter(RateLimiterMode.CrawlStatus, null);
     } else if (mode == RateLimiterMode.ExtractStatus) {
-      rateLimiter = getRateLimiter(RateLimiterMode.ExtractStatus, token);
+      rateLimiter = getRateLimiter(RateLimiterMode.ExtractStatus, null);
     } else {
-      rateLimiter = getRateLimiter(RateLimiterMode.Preview, token);
+      rateLimiter = getRateLimiter(RateLimiterMode.Preview, null);
     }
     teamId = `preview_${iptoken}`;
   } else if (token.startsWith("fco_")) {
@@ -750,7 +691,6 @@ async function supaAuthenticateUser(
     // Use the resolved fc- API key to get the normal ACUC chunk
     const resolvedApi = parseApi(introspection.api_key);
     chunk = await getACUC(resolvedApi, false, true, RateLimiterMode.Scrape);
-    chunk = await ensureChunkOrgId(resolvedApi, chunk);
 
     if (chunk === null) {
       return {
@@ -761,14 +701,14 @@ async function supaAuthenticateUser(
     }
 
     teamId = chunk.team_id;
-    priceId = chunk.price_id;
 
     subscriptionData = {
       team_id: teamId,
     };
-    rateLimiter = getRateLimiter(
-      mode ?? RateLimiterMode.Crawl,
-      chunk.rate_limits,
+    rateLimiter = await buildAuthenticatedRateLimiter(
+      teamId,
+      chunk.org_id,
+      mode,
     );
   } else {
     normalizedApi = parseApi(token);
@@ -781,7 +721,6 @@ async function supaAuthenticateUser(
     }
 
     chunk = await getACUC(normalizedApi, false, true, RateLimiterMode.Scrape);
-    chunk = await ensureChunkOrgId(normalizedApi, chunk);
 
     if (chunk === null) {
       return {
@@ -792,14 +731,14 @@ async function supaAuthenticateUser(
     }
 
     teamId = chunk.team_id;
-    priceId = chunk.price_id;
 
     subscriptionData = {
       team_id: teamId,
     };
-    rateLimiter = getRateLimiter(
-      mode ?? RateLimiterMode.Crawl,
-      chunk.rate_limits,
+    rateLimiter = await buildAuthenticatedRateLimiter(
+      teamId,
+      chunk.org_id,
+      mode,
     );
   }
 
@@ -842,7 +781,6 @@ async function supaAuthenticateUser(
   } catch (rateLimiterRes) {
     // logger.error(`Rate limit exceeded: ${rateLimiterRes}`, {
     //   teamId,
-    //   priceId,
     //   mode,
     //   rateLimits: chunk?.rate_limits,
     //   rateLimiterRes,

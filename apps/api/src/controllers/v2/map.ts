@@ -100,13 +100,10 @@ export async function mapController(
     if (avgrabResults !== null) {
       const creditsCost = avgrabResults.length;
 
-      billTeam(
-        req.auth.team_id,
-        req.acuc?.sub_id ?? undefined,
-        creditsCost,
-        req.acuc?.api_key_id ?? null,
-        { endpoint: "map", jobId: mapId },
-      ).catch(error => {
+      billTeam(req.auth.team_id, creditsCost, req.acuc?.api_key_id ?? null, {
+        endpoint: "map",
+        jobId: mapId,
+      }).catch(error => {
         logger.error(
           `Failed to bill team ${req.auth.team_id} for ${creditsCost} credits: ${error}`,
         );
@@ -170,6 +167,7 @@ export async function mapController(
         },
         origin: req.body.origin,
         teamId: req.auth.team_id,
+        orgId: req.acuc?.org_id ?? null,
         allowExternalLinks: req.body.allowExternalLinks,
         abort: abort.signal,
         mock: req.body.useMock,
@@ -228,13 +226,10 @@ export async function mapController(
 
   // Bill the team
   const creditsToBill = 1 + threatScanCredits;
-  billTeam(
-    req.auth.team_id,
-    req.acuc?.sub_id ?? undefined,
-    creditsToBill,
-    req.acuc?.api_key_id ?? null,
-    { endpoint: "map", jobId: mapId },
-  ).catch(error => {
+  billTeam(req.auth.team_id, creditsToBill, req.acuc?.api_key_id ?? null, {
+    endpoint: "map",
+    jobId: mapId,
+  }).catch(error => {
     logger.error("Failed to bill team for map credits", {
       teamId: req.auth.team_id,
       creditsToBill,

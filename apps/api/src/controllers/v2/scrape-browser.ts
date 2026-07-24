@@ -17,7 +17,7 @@ import {
   didBrowserSessionUsePrompt,
   clearBrowserSessionPromptFlag,
 } from "../../lib/browser-sessions";
-import {} from "../../lib/concurrency-limit";
+import { getEffectiveConcurrencyLimit } from "../../lib/concurrency-limit";
 import {
   getCombinedTeamActiveCount,
   mirrorExternalSlotAcquire,
@@ -46,7 +46,7 @@ import { getScrapeZDR } from "../../lib/zdr-helpers";
 import { RequestWithAuth, ScrapeOptions } from "./types";
 import { billTeam } from "../../services/billing/credit_billing";
 import {
-  KEYLESS_CREDITS_MESSAGE,
+  KEYLESS_FREE_TIER_LIMIT_MESSAGE,
   adjustKeylessCredits,
   keylessTeamUuid,
   logKeylessCreditUsage,
@@ -219,7 +219,7 @@ export async function scrapeInteractController(
     if ("error" in created) {
       if (
         created.status === 429 &&
-        created.body.error === KEYLESS_CREDITS_MESSAGE
+        created.body.error === KEYLESS_FREE_TIER_LIMIT_MESSAGE
       ) {
         applyAgentAuthDiscoveryHeader(res);
       }
@@ -278,7 +278,6 @@ export async function scrapeInteractController(
   // so LangSmith metadata filters don't match empty strings.
   const traceIdentity = {
     orgId: req.auth.org_id ?? undefined,
-    subUserId: req.acuc?.sub_user_id ?? undefined,
   };
 
   let execResult: BrowserServiceExecResponse | AgentResult;
@@ -474,13 +473,10 @@ export async function scrapeStopInteractiveBrowserController(
     });
   });
 
-  billTeam(
-    req.auth.team_id,
-    req.acuc?.sub_id ?? undefined,
-    creditsBilled,
-    req.acuc?.api_key_id ?? null,
-    { endpoint: "interact", jobId: session.id },
-  ).catch(error => {
+  billTeam(req.auth.team_id, creditsBilled, req.acuc?.api_key_id ?? null, {
+    endpoint: "interact",
+    jobId: session.id,
+  }).catch(error => {
     logger.error("Failed to bill team for interact session", {
       error,
       creditsBilled,
@@ -564,7 +560,7 @@ async function createSessionForScrape(
       status: 429,
       body: {
         success: false,
-        error: KEYLESS_CREDITS_MESSAGE,
+        error: KEYLESS_FREE_TIER_LIMIT_MESSAGE,
       },
       error: true,
     };
@@ -594,7 +590,10 @@ async function createSessionForScrape(
   }
 
   // Active session limit — uses the same concurrency pool as scrape/crawl
-  const concurrencyLimit = req.acuc?.concurrency ?? 2;
+  const concurrencyLimit = await getEffectiveConcurrencyLimit(
+    req.auth.team_id,
+    req.acuc?.org_id,
+  );
   const activeCount = await getCombinedTeamActiveCount(req.auth.team_id);
   if (activeCount >= concurrencyLimit) {
     adjustKeylessCredits(req.auth.team_id, -keylessReserved).catch(() => {});

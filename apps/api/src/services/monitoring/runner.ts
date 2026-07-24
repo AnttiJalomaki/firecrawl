@@ -303,6 +303,9 @@ async function scrapeSearchMonitorPage(params: {
       scrapeOptions,
       internalOptions: {
         teamId: params.teamId,
+        // Monitors do no in-pipeline blocklist enforcement (business rule);
+        // search results are filtered via isBlocked before scraping.
+        orgId: null,
         saveScrapeResultToGCS: !!config.GCS_FIRE_ENGINE_BUCKET_NAME,
         bypassBilling: true,
         zeroDataRetention: false,
@@ -364,7 +367,6 @@ async function billMonitorCheck(params: {
     "bill_team",
     {
       team_id: params.monitor.team_id,
-      subscription_id: undefined,
       credits: params.actualCredits,
       billing: { endpoint: "monitor", jobId: params.check.id },
       is_extract: false,
@@ -536,6 +538,8 @@ async function enqueueMonitorScrapeTarget(params: {
         scrapeOptions,
         internalOptions: {
           teamId: params.monitor.team_id,
+          // Monitors do no in-pipeline blocklist enforcement (business rule).
+          orgId: null,
           saveScrapeResultToGCS: !!config.GCS_FIRE_ENGINE_BUCKET_NAME,
           bypassBilling: true,
           zeroDataRetention: false,
@@ -604,6 +608,8 @@ async function enqueueMonitorCrawlTarget(params: {
     internalOptions: {
       disableSmartWaitCache: true,
       teamId: params.monitor.team_id,
+      // Monitors do no in-pipeline blocklist enforcement (business rule).
+      orgId: null,
       saveScrapeResultToGCS: !!config.GCS_FIRE_ENGINE_BUCKET_NAME,
       zeroDataRetention: false,
       bypassBilling: true,
@@ -779,6 +785,7 @@ async function runMonitorSearchTarget(params: {
     isBlocked: url =>
       isUrlBlocked(url, teamFlags, {
         team_id: monitor.team_id,
+        org_id: acuc?.org_id ?? null,
         origin: "monitor.search",
       }),
     goalVersion,

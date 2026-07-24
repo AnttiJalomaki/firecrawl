@@ -22,6 +22,7 @@ import {
   mirrorExternalSlotAcquire,
   mirrorExternalSlotRelease,
 } from "../../services/worker/nuq-router";
+import { getEffectiveConcurrencyLimit } from "../../lib/concurrency-limit";
 import { RequestWithAuth } from "./types";
 import { billTeam } from "../../services/billing/credit_billing";
 import { enqueueBrowserSessionActivity } from "../../lib/browser-session-activity";
@@ -256,7 +257,10 @@ export async function browserCreateController(
   }
 
   // 0b. Enforce concurrency limit (shared pool with scrape/crawl/interact)
-  const concurrencyLimit = req.acuc?.concurrency ?? 2;
+  const concurrencyLimit = await getEffectiveConcurrencyLimit(
+    req.auth.team_id,
+    req.acuc?.org_id,
+  );
   const activeCount = await getCombinedTeamActiveCount(req.auth.team_id);
   if (activeCount >= concurrencyLimit) {
     logger.warn("Concurrency limit reached for browser session", {
@@ -608,13 +612,10 @@ export async function browserDeleteController(
     });
   });
 
-  billTeam(
-    req.auth.team_id,
-    req.acuc?.sub_id ?? undefined,
-    creditsBilled,
-    req.acuc?.api_key_id ?? null,
-    { endpoint: usedPrompt ? "interact" : "browser", jobId: session.id },
-  ).catch(error => {
+  billTeam(req.auth.team_id, creditsBilled, req.acuc?.api_key_id ?? null, {
+    endpoint: usedPrompt ? "interact" : "browser",
+    jobId: session.id,
+  }).catch(error => {
     logger.error("Failed to bill team for browser session", {
       error,
       creditsBilled,
@@ -754,7 +755,6 @@ export async function browserWebhookDestroyedController(
 
   billTeam(
     session.team_id,
-    undefined, // subscription_id — billTeam will look it up
     creditsBilled,
     null, // api_key_id not available in webhook context
     { endpoint: usedPrompt ? "interact" : "browser", jobId: session.id },

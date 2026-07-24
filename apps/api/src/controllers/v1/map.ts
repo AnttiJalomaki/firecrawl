@@ -93,6 +93,7 @@ export async function getMapResults({
   includeSubdomains = true,
   crawlerOptions = {},
   teamId,
+  orgId,
   origin,
   includeMetadata = false,
   allowExternalLinks,
@@ -114,6 +115,7 @@ export async function getMapResults({
   includeSubdomains?: boolean;
   crawlerOptions?: any;
   teamId: string;
+  orgId?: string | null;
   origin?: string;
   includeMetadata?: boolean;
   allowExternalLinks?: boolean;
@@ -146,7 +148,7 @@ export async function getMapResults({
       ...(location ? { location } : {}),
       ...(headers ? { headers } : {}),
     }),
-    internalOptions: { teamId },
+    internalOptions: { teamId, orgId: orgId ?? null },
     team_id: teamId,
     createdAt: Date.now(),
   };
@@ -445,6 +447,7 @@ export async function mapController(
         crawlerOptions: req.body,
         origin: req.body.origin,
         teamId: req.auth.team_id,
+        orgId: req.acuc?.org_id ?? null,
         abort: abort.signal,
         mock: req.body.useMock,
         filterByPath: req.body.filterByPath !== false,
@@ -503,13 +506,10 @@ export async function mapController(
 
   // Bill the team
   const creditsToBill = 1 + threatScanCredits;
-  billTeam(
-    req.auth.team_id,
-    req.acuc?.sub_id,
-    creditsToBill,
-    req.acuc?.api_key_id ?? null,
-    { endpoint: "map", jobId: mapId },
-  ).catch(error => {
+  billTeam(req.auth.team_id, creditsToBill, req.acuc?.api_key_id ?? null, {
+    endpoint: "map",
+    jobId: mapId,
+  }).catch(error => {
     logger.error(
       `Failed to bill team ${req.auth.team_id} for ${creditsToBill} credit(s): ${error}`,
     );

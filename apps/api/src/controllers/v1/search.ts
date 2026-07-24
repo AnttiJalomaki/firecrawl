@@ -34,7 +34,7 @@ import {
 import { fromV1ScrapeOptions } from "../v2/types";
 import { getSearchForcedKind } from "../../lib/zdr-helpers";
 import {
-  KEYLESS_CREDITS_MESSAGE,
+  KEYLESS_FREE_TIER_LIMIT_MESSAGE,
   adjustKeylessCredits,
   logKeylessCreditUsage,
   reserveKeylessCredits,
@@ -47,6 +47,7 @@ export async function searchAndScrapeSearchResult(
   query: string,
   options: {
     teamId: string;
+    orgId?: string | null;
     origin: string;
     timeout: number;
     scrapeOptions: any;
@@ -77,6 +78,7 @@ export async function searchAndScrapeSearchResult(
       })),
       {
         teamId: options.teamId,
+        orgId: options.orgId ?? null,
         origin: options.origin,
         timeout: options.timeout,
         scrapeOptions,
@@ -212,7 +214,7 @@ export async function searchController(
         applyAgentAuthDiscoveryHeader(res);
         return res.status(429).json({
           success: false,
-          error: KEYLESS_CREDITS_MESSAGE,
+          error: KEYLESS_FREE_TIER_LIMIT_MESSAGE,
         });
       }
       reservedKeylessCredits = projectedKeylessCredits;
@@ -235,7 +237,9 @@ export async function searchController(
       },
       {
         teamId: req.auth.team_id,
+        orgId: req.acuc?.org_id ?? null,
         origin: req.body.origin,
+        integration: req.body.integration,
         apiKeyId: req.acuc?.api_key_id ?? null,
         flags: req.acuc?.flags ?? null,
         requestId: jobId,
@@ -279,7 +283,6 @@ export async function searchController(
     if (!isSearchPreview) {
       billTeam(
         req.auth.team_id,
-        req.acuc?.sub_id ?? undefined,
         result.searchCredits,
         req.acuc?.api_key_id ?? null,
         { endpoint: "search", jobId },

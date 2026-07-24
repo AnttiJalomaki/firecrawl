@@ -8,7 +8,7 @@ import {
 } from "./types";
 import { billTeam } from "../../services/billing/credit_billing";
 import {
-  KEYLESS_CREDITS_MESSAGE,
+  KEYLESS_FREE_TIER_LIMIT_MESSAGE,
   adjustKeylessCredits,
   logKeylessCreditUsage,
   reserveKeylessCredits,
@@ -192,7 +192,7 @@ export async function searchController(
         applyAgentAuthDiscoveryHeader(res);
         return res.status(429).json({
           success: false,
-          error: KEYLESS_CREDITS_MESSAGE,
+          error: KEYLESS_FREE_TIER_LIMIT_MESSAGE,
         });
       }
       reservedKeylessCredits = projectedKeylessCredits;
@@ -218,7 +218,9 @@ export async function searchController(
       },
       {
         teamId: req.auth.team_id,
+        orgId: req.acuc?.org_id ?? null,
         origin: req.body.origin,
+        integration: req.body.integration,
         apiKeyId: req.acuc?.api_key_id ?? null,
         flags: req.acuc?.flags ?? null,
         requestId: agentRequestId ?? jobId,
@@ -238,14 +240,15 @@ export async function searchController(
     if (!isSearchPreview && shouldBill) {
       billTeam(
         req.auth.team_id,
-        req.acuc?.sub_id ?? undefined,
         result.searchCredits,
         req.acuc?.api_key_id ?? null,
         billing,
       ).catch(error =>
-        logger.error(
-          `Failed to bill team ${req.acuc?.sub_id} for ${result.searchCredits} credits: ${error}`,
-        ),
+        logger.error("Failed to bill team for search credits", {
+          teamId: req.auth.team_id,
+          searchCredits: result.searchCredits,
+          error,
+        }),
       );
     }
 

@@ -36,6 +36,7 @@ import { checkUrl } from "../../lib/threat-protection";
 import { UnsafeDomainBlockedError } from "../../lib/threat-protection/error";
 import { calculateThreatScanCredits } from "../../lib/scrape-billing";
 import { billTeam } from "../../services/billing/credit_billing";
+import { getEffectiveConcurrencyLimit } from "../../lib/concurrency-limit";
 
 export async function crawlController(
   req: RequestWithAuth<{}, CrawlResponse, CrawlRequest>,
@@ -84,7 +85,6 @@ export async function crawlController(
       if (threatScanCredits > 0) {
         billTeam(
           req.auth.team_id,
-          req.acuc?.sub_id ?? undefined,
           threatScanCredits,
           req.acuc?.api_key_id ?? null,
           { endpoint: "crawl" },
@@ -146,7 +146,10 @@ export async function crawlController(
     api_key_id: req.acuc?.api_key_id ?? null,
   });
 
-  let { remainingCredits } = req.account!;
+  // checkCreditsMiddleware (always runs before this controller) is the source
+  // of truth: Infinity when Autumn allows the request, the real remaining when
+  // it clamps a low-credit crawl. Default to no clamp if it's somehow unset.
+  let remainingCredits = req.account?.remainingCredits ?? Infinity;
   const useDbAuthentication = config.USE_DB_AUTHENTICATION;
   if (!useDbAuthentication) {
     remainingCredits = Infinity;
@@ -168,6 +171,7 @@ export async function crawlController(
         basePrompt: req.body.prompt,
         url: req.body.url,
         teamId: req.auth.team_id,
+        orgId: req.acuc?.org_id ?? null,
         flags: req.acuc?.flags ?? null,
         logger,
         limit: 50,
@@ -253,6 +257,10 @@ export async function crawlController(
     originalBodyLimit: preNormalizedBody.limit,
   });
 
+  const effectiveConcurrency = await getEffectiveConcurrencyLimit(
+    req.auth.team_id,
+    req.acuc?.org_id,
+  );
   const sc: StoredCrawl = {
     originUrl: req.body.url,
     crawlerOptions: toV0CrawlerOptions(finalCrawlerOptions),
@@ -260,6 +268,7 @@ export async function crawlController(
     internalOptions: {
       disableSmartWaitCache: true,
       teamId: req.auth.team_id,
+      orgId: req.acuc?.org_id ?? null,
       saveScrapeResultToGCS: config.GCS_FIRE_ENGINE_BUCKET_NAME ? true : false,
       zeroDataRetention,
       agentIndexOnly: (req as any).agentIndexOnly ?? false,
@@ -269,9 +278,7 @@ export async function crawlController(
     createdAt: Date.now(),
     maxConcurrency:
       req.body.maxConcurrency !== undefined
-        ? req.acuc?.concurrency !== undefined
-          ? Math.min(req.body.maxConcurrency, req.acuc.concurrency)
-          : req.body.maxConcurrency
+        ? Math.min(req.body.maxConcurrency, effectiveConcurrency)
         : undefined,
     zeroDataRetention,
     v1: true,

@@ -1256,20 +1256,7 @@ export type AuthCreditUsageChunk = {
   api_key: string;
   api_key_id: number;
   team_id: string;
-  org_id?: string | null;
-  sub_id: string | null;
-  sub_current_period_start: string | null;
-  sub_current_period_end: string | null;
-  sub_user_id: string | null;
-  price_id: string | null;
-  price_credits: number; // credit limit with assoicated price, or free_credits (500) if free plan
-  price_should_be_graceful: boolean;
-  price_associated_auto_recharge_price_id: string | null;
-  credits_used: number;
-  coupon_credits: number; // do not rely on this number to be up to date after calling a billTeam
-  adjusted_credits_used: number; // credits this period minus coupons used
-  remaining_credits: number;
-  total_credits_sum: number;
+  org_id: string;
   plan_priority: {
     bucketLimit: number;
     planModifier: number;
@@ -1332,7 +1319,6 @@ export type TeamFlags = {
   // POST /v2/search/:jobId/feedback returns 403 TEAM_OPTED_OUT when true.
   searchFeedbackOptOut?: boolean;
   researchBeta?: boolean;
-  highlightsBeta?: boolean;
   enrichBeta?: boolean;
   professionalProfileCompanyDataBeta?: boolean;
   organizationDataSourceAccess?: Record<
@@ -1466,6 +1452,7 @@ function fromLegacyCrawlerOptions(
     internalOptions: {
       v0CrawlOnlyUrls: x.returnOnlyUrls,
       teamId,
+      orgId: null,
     },
   };
 }
@@ -1531,6 +1518,7 @@ export function fromLegacyScrapeOptions(
       atsv: pageOptions.atsv,
       v0DisableJsDom: pageOptions.disableJsDom,
       teamId,
+      orgId: null,
     },
     // TODO: fallback, fetchPageContent, replaceAllPathsWithAbsolutePaths, includeLinks
   };

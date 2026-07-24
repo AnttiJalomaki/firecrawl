@@ -159,11 +159,16 @@ const configSchema = z.object({
   CLICKHOUSE_ANALYTICS_URL: z.string().optional(),
   CLICKHOUSE_ANALYTICS_DATABASE: z.string().optional(),
 
-  // Search highlights (beta): query-highlights model service. URL is the base
-  // (e.g. https://firecrawl--query-highlights.modal.run); TOKEN is the bearer
-  // token sent on every request.
+  // Search highlights: highlighter service base URL. TOKEN is optional
+  // bearer auth for legacy/external services; the in-cluster service omits it.
   HIGHLIGHT_MODEL_URL: z.string().optional(),
   HIGHLIGHT_MODEL_TOKEN: z.string().optional(),
+  // Stable percentage of non-MCP/CLI cohorts whose generated highlights are
+  // returned. The remaining eligible traffic still runs in shadow mode.
+  HIGHLIGHT_ROLLOUT_PERCENT: z.coerce.number().min(0).max(100).default(0),
+
+  // Exchange (routed data sources service)
+  FIRE_EXCHANGE_URL: z.url().optional(),
 
   // Fire Engine
   FIRE_ENGINE_BETA_URL: z.string().optional(),
@@ -243,6 +248,12 @@ const configSchema = z.object({
   FIRE_PDF_PERCENT: z.coerce.number().min(0).max(100).default(10),
   FIRE_PDF_BASE_URL: z.string().optional(),
   FIRE_PDF_API_KEY: z.string().optional(),
+  // Async /jobs rollout is a separate, server-controlled cohort inside
+  // traffic already selected for FirePDF. It is disabled by default.
+  FIRE_PDF_ASYNC_PERCENT: z.coerce.number().min(0).max(100).default(0),
+  FIRE_PDF_ASYNC_FORCE_TEAM_IDS: z.string().optional(),
+  FIRE_PDF_ASYNC_DISABLE_TEAM_IDS: z.string().optional(),
+  FIRE_PDF_ASYNC_ALLOW_REQUEST_OVERRIDE: z.stringbool().default(false),
 
   // RunPod
   RUNPOD_MU_API_KEY: z.string().optional(),
