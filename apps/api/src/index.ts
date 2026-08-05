@@ -28,9 +28,9 @@ import {
 import { ZodError } from "zod";
 import { QueueFullError } from "./lib/queue-full-error";
 import { v7 as uuidv7 } from "uuid";
-import { attachWsProxy } from "./services/agentLivecastWS";
 import { cacheableLookup } from "./scraper/scrapeURL/lib/cacheableLookup";
 import { v2Router } from "./routes/v2";
+import { labsRouter } from "./routes/labs";
 import { registerMcpActionLogIngestRoute } from "./routes/mcp-action-logs";
 import { startMcpActionLogRetentionWorkerIfEnabled } from "./services/mcp/action-logs";
 import { db } from "./db/connection";
@@ -103,6 +103,8 @@ const { addQueue, removeQueue, setQueues, replaceQueues } = createBullBoard({
     new BullMQAdapter(getDeepResearchQueue()),
     new BullMQAdapter(getBillingQueue()),
     new BullMQAdapter(getPrecrawlQueue()),
+    // SIEM audit delivery runs on RabbitMQ; inspect it in the broker's
+    // management UI, not here.
   ],
   serverAdapter: serverAdapter,
 });
@@ -129,6 +131,7 @@ app.get("/e2e-test", (_, res) => {
 app.use(v0Router);
 app.use("/v1", v1Router);
 app.use("/v2", v2Router);
+app.use("/labs", labsRouter);
 app.use(adminRouter);
 
 const DEFAULT_PORT = config.PORT;
@@ -145,9 +148,6 @@ async function startServer(port = DEFAULT_PORT) {
     });
     throw error;
   }
-
-  // Attach WebSocket proxy to the Express app
-  attachWsProxy(app);
 
   const mcpActionLogRetention = startMcpActionLogRetentionWorkerIfEnabled({
     enabled: config.MCP_ACTION_LOG_STORAGE_ENABLED,

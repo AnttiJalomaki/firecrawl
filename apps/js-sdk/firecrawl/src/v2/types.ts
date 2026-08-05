@@ -183,6 +183,10 @@ export type ActionOption =
   | ExecuteJavascriptAction
   | PDFAction;
 
+export interface AuditMetadata {
+  username: string;
+}
+
 export interface ScrapeOptions {
   formats?: FormatOption[];
   headers?: Record<string, string>;
@@ -209,6 +213,7 @@ export interface ScrapeOptions {
   lockdown?: boolean;
   redactPII?: boolean | RedactPIIOptions;
   threatProtection?: ThreatProtectionOptions;
+  auditMetadata?: AuditMetadata;
   profile?: {
     name: string;
     saveChanges?: boolean;
@@ -652,6 +657,7 @@ export interface SearchResultWeb {
   url: string;
   title?: string;
   description?: string;
+  position?: number;
   category?: string;
 }
 
@@ -678,10 +684,11 @@ export interface SearchData {
   web?: Array<SearchResultWeb | Document>;
   news?: Array<SearchResultNews | Document>;
   images?: Array<SearchResultImages | Document>;
+  developer?: Array<SearchResultWeb | Document>;
 }
 
 export interface CategoryOption {
-  type: "github" | "research" | "pdf";
+  type: "github" | "research" | "pdf" | "developer";
 }
 
 export interface SearchRequest {
@@ -689,7 +696,9 @@ export interface SearchRequest {
   sources?: Array<
     "web" | "news" | "images" | { type: "web" | "news" | "images" }
   >;
-  categories?: Array<"github" | "research" | "pdf" | CategoryOption>;
+  categories?: Array<
+    "github" | "research" | "pdf" | "developer" | CategoryOption
+  >;
   includeDomains?: string[];
   excludeDomains?: string[];
   limit?: number;
@@ -796,6 +805,7 @@ export interface MapOptions {
   origin?: string;
   location?: LocationConfig;
   threatProtection?: ThreatProtectionOptions;
+  auditMetadata?: AuditMetadata;
 }
 
 export type FeedbackRating = "good" | "partial" | "bad";

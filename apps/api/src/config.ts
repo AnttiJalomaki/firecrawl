@@ -31,7 +31,17 @@ const configSchema = z.object({
   FIRECRAWL_DASHBOARD_URL: z.url().default("https://www.firecrawl.dev"),
   SUPPORT_AGENT_URL: z.string().url().optional(),
   SUPPORT_AGENT_VERCEL_BYPASS_SECRET: z.string().optional(),
+  FIREBRAIN_TRACKS_URL: z.preprocess(
+    v => (typeof v === "string" && v.trim() === "" ? undefined : v),
+    z.string().url().optional(),
+  ),
+  FIREBRAIN_TRACKS_API_KEY: z.preprocess(
+    v => (typeof v === "string" && v.trim() === "" ? undefined : v),
+    z.string().trim().optional(),
+  ),
   RESEARCH_PROXY_URL: z.string().url().optional(),
+  LABS_SEARCH_URL: z.string().url().optional(),
+  LABS_SEARCH_SECRET: z.string().optional(),
 
   // Express
   EXPRESS_TRUST_PROXY: z.coerce.number().optional(),
@@ -80,6 +90,18 @@ const configSchema = z.object({
     .int()
     .positive()
     .default(6 * 60 * 60),
+
+  // Zscaler ZIA provider ("zscaler" threat protection mode). Base-URL
+  // overrides exist for tests (mock ZIA server); production always uses the
+  // real endpoints derived from the org's vanity domain and cloud name.
+  ZSCALER_TOKEN_URL_OVERRIDE: z.string().url().optional(),
+  ZSCALER_API_URL_OVERRIDE: z.string().url().optional(),
+
+  // Organization SIEM logging delivery. The encryption key must decode to
+  // exactly 32 bytes; validation happens when a secret is encrypted/decrypted
+  // so self-hosted deployments that do not use this feature need no key.
+  SIEM_LOGGING_ENCRYPTION_KEY: z.string().optional(),
+  PARTNER_EGRESS_PROXY_URL: z.string().url().optional(),
 
   // API Keys & Authentication
   BULL_AUTH_KEY: z.string().optional(),
