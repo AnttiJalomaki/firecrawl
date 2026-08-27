@@ -342,6 +342,47 @@ const configSchema = z.object({
   FIRE_PDF_ASYNC_FORCE_TEAM_IDS: z.string().optional(),
   FIRE_PDF_ASYNC_DISABLE_TEAM_IDS: z.string().optional(),
   FIRE_PDF_ASYNC_ALLOW_REQUEST_OVERRIDE: z.stringbool().default(false),
+  // Large-PDF by-reference submits (30-256MB files uploaded to GCS and
+  // handed to fire-pdf via `input_gcs_uri`). This is an explicit on/off
+  // switch, not a percentage: no alternative engine exists at this size,
+  // so there is no cohort to sample "out" — only text-only degradation.
+  // FIRE_PDF_ENABLE remains the master switch for both paths.
+  FIRE_PDF_BY_REFERENCE_ENABLE: z.stringbool().default(true),
+  // Bucket that receives large-PDF inputs for by-reference async submits
+  // (fire-pdf reads them back via `input_gcs_uri`). fire-pdf only accepts
+  // URIs inside its own configured bucket + `inputs/` prefix, so this must
+  // match fire-pdf's FIRE_PDF_GCS_BUCKET. Upload failures (e.g. missing
+  // IAM grant) fall back to the pre-by-reference behavior for oversized
+  // files rather than failing the scrape.
+  FIRE_PDF_GCS_INPUT_BUCKET: z
+    .string()
+    .trim()
+    .min(1)
+    .default("firecrawl-pdf-pipeline"),
+  // Bucket fire-engine uses for its large-PDF handoff (files too big to
+  // inline as base64 in its response). Acts as the allowlist for inbound
+  // `file.gcs_uri` references — objects outside it are never fetched or
+  // copied. Deliberately no default: this is a security-sensitive inbound
+  // allowlist, so consuming references requires explicit opt-in (set to
+  // fire-engine's GCS_PDF_BUCKET_NAME); unset disables the path.
+  FIRE_ENGINE_PDF_GCS_BUCKET: emptyStringAsUndefined(z.string().trim().min(1)),
+  // Large-PDF size policy, applied per team on every acquisition path
+  // (direct download, fire-engine handoff, by-reference submit) and sent to
+  // fire-engine as the per-request pdfMaxSize. The default applies to every
+  // team; ids on the allowlist get the privileged cap. Both are clamped to
+  // the 256MB architectural ceiling.
+  PDF_BY_REFERENCE_MAX_BYTES_DEFAULT: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(50 * 1024 * 1024),
+  PDF_BY_REFERENCE_MAX_BYTES_PRIVILEGED: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(200 * 1024 * 1024),
+  // Comma-separated team ids granted the privileged cap.
+  PDF_BY_REFERENCE_PRIVILEGED_TEAM_IDS: z.string().optional(),
 
   // RunPod
   RUNPOD_MU_API_KEY: z.string().optional(),
@@ -439,6 +480,14 @@ const configSchema = z.object({
   FIREBILL_URL: emptyStringAsUndefined(z.string().url()),
   FIREBILL_SECRET: emptyStringAsUndefined(z.string().trim().min(1)),
   FIREBILL_ORG_IDS: delimitedList(",").optional(),
+  // How long "this team is not partner-provisioned" is trusted. Only the
+  // negative is bounded: provisioning is one-way, so a positive cannot go
+  // stale, while a negative does the moment a partner provisions an account.
+  // Capped at firebill's own gateway lookup TTL (300s) — the two sides answer
+  // the same question, and trusting a negative for longer than firebill trusts
+  // an answer turns this cache back into the stale allowlist it replaced. 0
+  // disables caching negatives entirely.
+  FIREBILL_GATEWAY_NEGATIVE_TTL_SECONDS: z.coerce.number().int().min(0).max(300).default(60),
   // Sticky percentage ramp, on top of the allowlist above. The bucket is a
   // hash of the org id, so an org that is in at 5 is still in at 30 — a ramp
   // only ever adds, and never reshuffles who is on which path mid-rollout.
