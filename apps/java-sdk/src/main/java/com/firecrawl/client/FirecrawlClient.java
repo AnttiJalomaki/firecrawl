@@ -37,7 +37,7 @@ import java.util.concurrent.ForkJoinPool;
 public class FirecrawlClient {
 
     private static final String DEFAULT_API_URL = "https://api.firecrawl.dev";
-    private static final String SDK_ORIGIN = "java-sdk@1.16.0";
+    private static final String SDK_ORIGIN = "java-sdk@1.17.0";
     private static final long DEFAULT_TIMEOUT_MS = 300_000; // 5 minutes
     private static final int DEFAULT_MAX_RETRIES = 3;
     private static final double DEFAULT_BACKOFF_FACTOR = 0.5;
@@ -642,6 +642,34 @@ public class FirecrawlClient {
     }
 
     /**
+     * Lists agent runs, most recent first.
+     *
+     * @return the agent list response
+     */
+    public AgentListResponse listAgents() {
+        return listAgents(null);
+    }
+
+    /**
+     * Lists agent runs, most recent first.
+     *
+     * Pages are fixed at 20 runs. To fetch the next page, pass the before
+     * value from the previous page's next URL. This method does not
+     * auto-paginate.
+     *
+     * @param before only return agent runs created before this unix
+     *               millisecond timestamp (nullable)
+     * @return the agent list response
+     */
+    public AgentListResponse listAgents(Long before) {
+        String endpoint = "/v2/agent";
+        if (before != null) {
+            endpoint += "?before=" + before;
+        }
+        return http.get(endpoint, AgentListResponse.class);
+    }
+
+    /**
      * Runs an agent task and waits for completion (auto-polling).
      *
      * @param options agent configuration options
@@ -1224,6 +1252,17 @@ public class FirecrawlClient {
      */
     public CompletableFuture<AgentStatusResponse> getAgentStatusAsync(String jobId) {
         return CompletableFuture.supplyAsync(() -> getAgentStatus(jobId), asyncExecutor);
+    }
+
+    /**
+     * Asynchronously lists agent runs, most recent first.
+     *
+     * @param before only return agent runs created before this unix
+     *               millisecond timestamp (nullable)
+     * @return a CompletableFuture that resolves to the AgentListResponse
+     */
+    public CompletableFuture<AgentListResponse> listAgentsAsync(Long before) {
+        return CompletableFuture.supplyAsync(() -> listAgents(before), asyncExecutor);
     }
 
     /**

@@ -1,5 +1,6 @@
 import {
   ActionsNotSupportedError,
+  ConcurrencyQueueTimeoutError,
   CrawlDenialError,
   ErrorCodes,
   MapFailedError,
@@ -16,6 +17,8 @@ import {
   UnsupportedFileError,
   PDFAntibotError,
   DocumentAntibotError,
+  PDFFetchProxyError,
+  DocumentFetchProxyError,
   PDFInsufficientTimeError,
   PDFOCRRequiredError,
   NoEnginesLeftError,
@@ -59,8 +62,10 @@ const errorMap: Record<ErrorCodes, any> = {
   SCRAPE_DNS_RESOLUTION_ERROR: DNSResolutionError,
   SCRAPE_PDF_INSUFFICIENT_TIME_ERROR: PDFInsufficientTimeError,
   SCRAPE_PDF_ANTIBOT_ERROR: PDFAntibotError,
+  SCRAPE_PDF_FETCH_PROXY_ERROR: PDFFetchProxyError,
   SCRAPE_PDF_OCR_REQUIRED: PDFOCRRequiredError,
   SCRAPE_DOCUMENT_ANTIBOT_ERROR: DocumentAntibotError,
+  SCRAPE_DOCUMENT_FETCH_PROXY_ERROR: DocumentFetchProxyError,
   SCRAPE_UNSUPPORTED_FILE_ERROR: UnsupportedFileError,
   SCRAPE_NO_CACHED_DATA: NoCachedDataError,
   SCRAPE_LOCKDOWN_CACHE_MISS: LockdownMissError,
@@ -78,6 +83,7 @@ const errorMap: Record<ErrorCodes, any> = {
   SCRAPE_JSON_CONTENT_TOO_LARGE: JsonExtractionContentTooLargeError,
   SCRAPE_X_TWITTER_CONFIGURATION_ERROR: XTwitterConfigurationError,
   MAP_FAILED: MapFailedError,
+  CONCURRENCY_QUEUE_TIMEOUT: ConcurrencyQueueTimeoutError,
   unsafe_domain_blocked: UnsafeDomainBlockedError,
 
   // Zod errors
