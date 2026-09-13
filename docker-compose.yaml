@@ -97,8 +97,12 @@ services:
 
   api:
     <<: *common-service
+    networks:
+      - backend
+      - cli-proxy
     environment:
       <<: *common-env
+      OPENAI_BASE_URL: http://cli-proxy-api:8317/v1
       HOST: "0.0.0.0"
       PORT: ${INTERNAL_PORT:-3002}
       EXTRACT_WORKER_PORT: ${EXTRACT_WORKER_PORT:-3004}
@@ -226,6 +230,9 @@ services:
 networks:
   backend:
     driver: bridge
+  cli-proxy:
+    external: true
+    name: selfcrawl-proxy
 
 volumes:
   fdb-data:
